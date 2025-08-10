@@ -109,7 +109,7 @@
         const rightEAR = getEAR(rightEye);
         const avgEAR = (leftEAR + rightEAR) / 2;
 
-        statusEl.textContent = Left EAR: ${leftEAR.toFixed(3)} | Right EAR: ${rightEAR.toFixed(3)} | Avg EAR: ${avgEAR.toFixed(3)};
+        statusEl.textContent = `Left EAR: ${leftEAR.toFixed(3)} | Right EAR: ${rightEAR.toFixed(3)} | Avg EAR: ${avgEAR.toFixed(3)}`;
 
         if (avgEAR < EYE_CLOSED_THRESHOLD) {
           if (!eyeClosedStart) {
