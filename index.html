@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Deteksi Ngantuk dengan Webcam</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background: #222;
+      color: #eee;
+      margin: 0; padding: 0;
+    }
+    video, canvas {
+      margin-top: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 20px rgba(255,255,255,0.2);
+    }
+    #status {
+      margin-top: 15px;
+      font-size: 1.2rem;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1>Deteksi Ngantuk dengan Webcam</h1>
+  <video id="video" width="480" height="360" autoplay muted></video>
+  <canvas id="overlay" width="480" height="360"></canvas>
+  <div id="status">Memuat model...</div>
+  <audio id="alarm" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" preload="auto"></audio>
+
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.9.1/dist/face-api.min.js"></script>
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('overlay');
+    const context = canvas.getContext('2d');
+    const statusEl = document.getElementById('status');
+    const alarmSound = document.getElementById('alarm');
+
+    // Threshold rasio mata tertutup (EAR - eye aspect ratio)
+    const EYE_CLOSED_THRESHOLD = 0.25;
+    // Waktu berturut-turut mata tertutup sebelum alarm (ms)
+    const ALARM_DELAY = 3000;
+
+    let eyeClosedStart = null;
+    let alarmPlaying = false;
+
+    async function start() {
+      // Load models face-api.js (face landmarks model is needed)
+      statusEl.textContent = 'Memuat model landmark wajah...';
+      await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/');
+      await faceapi.nets.faceLandmark68TinyNet.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/');
+      statusEl.textContent = 'Model siap. Mengakses kamera...';
+
+      // Start webcam
+      navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+        video.srcObject = stream;
+        video.play();
+        statusEl.textContent = 'Mendeteksi wajah...';
+        detectLoop();
+      }).catch(err => {
+        statusEl.textContent = 'Error akses kamera: ' + err;
+      });
+    }
+
+    // Fungsi untuk hitung eye aspect ratio (EAR)
+    function getEAR(eye) {
+      // eye = array of 6 points (x,y)
+      const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
+      const A = dist(eye[1], eye[5]);
+      const B = dist(eye[2], eye[4]);
+      const C = dist(eye[0], eye[3]);
+      return (A + B) / (2.0 * C);
+    }
+
+    async function detectLoop() {
+      const options = new faceapi.TinyFaceDetectorOptions();
+
+      const result = await faceapi.detectSingleFace(video, options).withFaceLandmarks(true);
+
+      context.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (result) {
+        const resizedResults = faceapi.resizeResults(result, { width: canvas.width, height: canvas.height });
+
+        // Gambar landmark wajah
+        faceapi.draw.drawFaceLandmarks(canvas, resizedResults);
+
+        const leftEye = resizedResults.landmarks.getLeftEye();
+        const rightEye = resizedResults.landmarks.getRightEye();
+
+        const leftEAR = getEAR(leftEye);
+        const rightEAR = getEAR(rightEye);
+        const avgEAR = (leftEAR + rightEAR) / 2;
+
+        statusEl.textContent = `EAR: ${avgEAR.toFixed(3)}`;
+
+        // Deteksi mata tertutup
+        if (avgEAR < EYE_CLOSED_THRESHOLD) {
+          if (!eyeClosedStart) eyeClosedStart = Date.now();
+
+          const elapsed = Date.now() - eyeClosedStart;
+
+          if (elapsed > ALARM_DELAY && !alarmPlaying) {
+            alarmPlaying = true;
+            alarmSound.play();
+            statusEl.textContent = 'Ngantuk terdeteksi! Alarm nyala!!! 😴⏰';
+          }
+        } else {
+          eyeClosedStart = null;
+          if (alarmPlaying) {
+            alarmSound.pause();
+            alarmSound.currentTime = 0;
+            alarmPlaying = false;
+            statusEl.textContent = 'Mata terbuka, alarm dimatikan.';
+          }
+        }
+      } else {
+        statusEl.textContent = 'Wajah tidak terdeteksi.';
+        eyeClosedStart = null;
+        if (alarmPlaying) {
+          alarmSound.pause();
+          alarmSound.currentTime = 0;
+          alarmPlaying = false;
+        }
+      }
+
+      requestAnimationFrame(detectLoop);
+    }
+
+    start();
+  </script>
+</body>
+</html>
